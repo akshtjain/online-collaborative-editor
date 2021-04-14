@@ -5,34 +5,44 @@ import io from "socket.io-client";
 
 const socket = io("http://localhost:4000");
 
-export const SyncingEditor = () => {
+export const SyncingEditor = (props) => {
+    const [value, setValue] = useState([
+      {
+        type: 'paragraph',
+        children: [{ text: 'A line of text in a paragraph.' }],
+      } 
+     ]); 
+    const groupId = props.groupId;
     const editor = useMemo(() => withReact(createEditor()), [])
     const remote = useRef(null);
     const id = useRef(`${Date.now()}`)
 
     useEffect(() => {
-        socket.on(
-            "new-remote-operations",
-            ( {editorId, ops } ) => {
-              if (id.current !== editorId) {
-                remote.current = true;
-                // console.log(JSON.parse(ops));
-                JSON.parse(ops).forEach((op) =>
-                  editor.apply(op)
-                );
-                remote.current = false;
-              }
+      fetch(`http://localhost:4000/groups/${groupId}`).then(x =>
+        x.json().then(data => {
+          setValue(data);
+        })
+      );
+      const eventName = `new-remote-operations-${groupId}`;
+      socket.on(
+        eventName,
+        ( {editorId, ops } ) => {
+            if (id.current !== editorId) {
+              remote.current = true;
+              ops.forEach((op) =>
+                editor.apply(op)
+              );
+              remote.current = false;
             }
-          );
-    }, [])
+          }
+        );
+
+        return () => {
+          socket.off(eventName);
+        };
+
+    }, [groupId])
     
-    // Add the initial value when setting up our state.
-    const [value, setValue] = useState([
-        {
-          type: 'paragraph',
-          children: [{ text: 'A line of text in a paragraph.' }],
-        },
-    ]); 
   
     return (
       <Slate
@@ -59,7 +69,9 @@ export const SyncingEditor = () => {
             if (ops.length && !remote.current) {
                 socket.emit("new-operations", {
                     editorId: id.current,
-                    ops: JSON.stringify(ops)
+                    ops,
+                    value : JSON.stringify(opts),
+                    groupId
                   });
             } 
         }}
